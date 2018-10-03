@@ -72,7 +72,7 @@ def clean_gmail_subjects(subs):
 # In[10]:
 
 
-non_receipt_subjects = clean_gmail_subjects(non_receipt_subjects)
+#non_receipt_subjects = clean_gmail_subjects(non_receipt_subjects)
 
 
 # In[11]:
