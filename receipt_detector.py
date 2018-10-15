@@ -182,29 +182,40 @@ from sklearn import metrics
 # print(metrics.classification_report(y_test, predicted))
 
 
-# In[284]:
+# In[15]:
 
 
 # z = [x_test[i] for i in range(len(x_test)) if y_test[i] == 0 and predicted[i] == 1]
 # z
 
 
-# In[290]:
+# In[20]:
 
 
-body = "your card was declined"
+# body = "your card was declined"
 
-pipe.predict([body])
+# pipe.predict([body])
 
 
-# In[238]:
+# In[17]:
 
 
 def is_receipt(subject):
     return pipe.predict([subject])[0] == 1
 
 
-# In[240]:
+# In[32]:
+
+
+def get_top_features_names(n=20):
+    feature_names = vectorizer.get_feature_names()
+    coefs_with_fns = sorted(zip(clf.coef_[0], feature_names))
+    top = [x[1] for x in coefs_with_fns[:-(n + 1):-1]]
+    return top
+ 
+
+
+# In[18]:
 
 
 def show_most_informative_features(vectorizer, clf, n=20):
@@ -215,8 +226,8 @@ def show_most_informative_features(vectorizer, clf, n=20):
         print ("\t%.4f\t%-15s\t\t%.4f\t%-15s" % (coef_1, fn_1, coef_2, fn_2))
 
 
-# In[291]:
+# In[33]:
 
 
-# show_most_informative_features(vectorizer,clf,1000)
+# show_most_informative_features(vectorizer,clf,50)
 

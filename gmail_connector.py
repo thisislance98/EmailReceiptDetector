@@ -1,7 +1,8 @@
 
 # coding: utf-8
 
-# In[119]:
+# In[19]:
+
 
 from __future__ import print_function
 # get_ipython().run_line_magic('config', 'IPCompleter.greedy=True')
@@ -11,19 +12,20 @@ import google.oauth2.credentials
 from httplib2 import Http
 from oauth2client import file, client, tools
 from receipt_detector import is_receipt
+from receipt_detector import get_top_features_names
 from datetime import datetime,timedelta
 from dateutil.parser import parse
 import pytz
 
 
-# In[62]:
+# In[2]:
 
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = 'https://www.googleapis.com/auth/gmail.readonly'
 
 
-# In[115]:
+# In[3]:
 
 
 # store = file.Storage('token.json')
@@ -34,25 +36,33 @@ SCOPES = 'https://www.googleapis.com/auth/gmail.readonly'
 # service = build('gmail', 'v1', http=creds.authorize(Http()))
 
 
-# In[125]:
+# In[17]:
 
 
 user_id =  'me'
 label_id_one = 'INBOX'
 label_id_two = 'UNREAD'
     
-def get_messages(service, date_query):
+def get_messages(service, query,quick_search):
     
     messages = []
     try:
-        response = service.users().messages().list(userId=user_id,labelIds=[label_id_one],q=date_query).execute()
+        if quick_search:
+            top = get_top_features_names(60)
+            for i in range(len(top)):
+                word = top[i]
+                query = query + ' subject:' + word
+                if i < len(top)-1:
+                    query = query + ' OR '
+        
+        response = service.users().messages().list(userId=user_id,labelIds=[label_id_one],q=query).execute()
         
         if 'messages' in response:
           messages.extend(response['messages'])
 
         while 'nextPageToken' in response:
           page_token = response['nextPageToken']
-          response = service.users().messages().list(userId=user_id,labelIds=[label_id_one],q=date_query,
+          response = service.users().messages().list(userId=user_id,labelIds=[label_id_one],q=query,
                                              pageToken=page_token).execute()
           messages.extend(response['messages'])
           
@@ -61,7 +71,7 @@ def get_messages(service, date_query):
     return messages
 
 
-# In[111]:
+# In[5]:
 
 
 def check_for_receipt(message):
@@ -77,7 +87,7 @@ def check_for_receipt(message):
     return False,None,None
 
 
-# In[112]:
+# In[6]:
 
 
 # import base64 
@@ -106,15 +116,15 @@ def check_for_receipt(message):
 # # check_for_receipt(msg)
 
 
-# In[126]:
+# In[18]:
 
 
 import time
 
 
-def get_receipts(credentials, date_range):
+def get_receipts(credentials, date_range, quick_search=True):
     
-    print(type(credentials))
+    
     creds = google.oauth2.credentials.Credentials(**credentials)
     service = googleapiclient.discovery.build('gmail', 'v1', credentials=creds)
     
@@ -129,11 +139,11 @@ def get_receipts(credentials, date_range):
             if got_receipt:
                 receipt = {
                     'subject' : subject,
-                    # 'payload' : payload
+                    'payload' : payload
                 }
                 receipts.append(receipt)
             
-    messages = get_messages(service,date_range)
+    messages = get_messages(service,date_range,quick_search)
     print(len(messages))
     chunk_size = 250
     start = 0
@@ -159,5 +169,7 @@ def get_receipts(credentials, date_range):
     print('done')
     return receipts
         
-# get_receipts('after:2018/09/03 before:2018/10/3')
+# creds = {u'scopes': ['https://www.googleapis.com/auth/gmail.readonly'], u'token_uri': u'https://www.googleapis.com/oauth2/v3/token', u'token': u'ya29.GlsrBvAlmmc0OSbNuOeaQmrxLaEWe3t-W7uvaaDsM8oR4G3E2dOp-h70QX84X8mn96rKsJNwnpZQIbl78qGPKEQSBBumPHWlT5ifeUxpecuqJ0iXoYh7RuROBMMA', u'client_id': u'969545108751-3cc55edgshu2bstroubelbu789vd9f68.apps.googleusercontent.com', u'client_secret': u'INqCxZbx_qa7o44Ja1TBRpRp', u'refresh_token': u'1/ngq8AA0Jssnc4O_FG6Oc9CIDULF3SdkwrJ-U2UolS28'}   
+# a = [x['subject'] for x in get_receipts(creds,'after:2018/09/03 before:2018/10/3')]
+# print(len(a))
 

@@ -3,6 +3,11 @@
 import os
 import flask
 import requests
+from flask import request,jsonify
+from send_response import SendResponse
+import json
+from receipt_detector import is_receipt
+
 
 import google.oauth2.credentials
 import google_auth_oauthlib.flow
@@ -26,37 +31,93 @@ app = flask.Flask(__name__)
 # key. See http://flask.pocoo.org/docs/0.12/quickstart/#sessions.
 app.secret_key = 'myreallysecrectsecret'
 
+def has_args(iterable, args):
+    """Verify that all args are in the iterable."""
+
+    try:
+        return all(x in iterable for x in args)
+
+    except TypeError:
+        return False
 
 @app.route('/')
 def index():
   return print_index_table()
 
+@app.errorhandler(SendResponse)
+def handle_invalid_usage(error):
+    response = jsonify(error.to_dict())
+    response.status_code = error.status_code
+    return response
 
-@app.route('/test')
-def test_api_request():
-  if 'credentials' not in flask.session:
-    return flask.redirect('authorize')
+@app.route('/get_outlook_receipts', methods=['POST'])
+def get_outlook_receipts():
 
+    if not has_args(request.args, ['start_date','end_date']):
+        raise SendResponse("Please provide start_date and end_date as request paramaters (i.e. 'get_outlook_receipts?start_date=2015-04-01&end_date=2017-01-01' ")
+
+    auth_err = "You must provide an Authorization header in the form of 'Bearer {YOUR MS GRAPH ACCESS TOKEN}"
+    if "authorization" not in request.headers:
+        raise SendResponse(auth_err)
+
+    authorization = request.headers['Authorization']
+
+    if authorization.split(' ')[0] and authorization.split(' ')[0] == 'Bearer' and authorization.split(' ')[1]:
+        access_token = authorization.split(' ')[1]
+    else:
+        raise SendResponse(auth_err)
+
+    date_range = "?$filter=ReceivedDateTime ge " + request.args['start_date'] + " and receivedDateTime lt " + request.args['end_date']
+    endpoint = "https://graph.microsoft.com/v1.0/me/messages"  + date_range
+
+    headers = {
+        'authorization': "Bearer " + access_token,
+        'cache-control': "no-cache",
+    }
+
+    graphdata = json.loads(requests.request("GET", endpoint, headers=headers).text)
+    if 'error' in graphdata:
+        raise SendResponse(json.dumps(graphdata))
+
+    receipts=[]
+    while True:
+        if '@odata.nextLink' in graphdata:
+            endpoint = graphdata['@odata.nextLink']
+            graphdata = json.loads(requests.request("GET", endpoint, headers=headers).text)
+            for mail in graphdata['value']:
+                if 'subject' in mail:
+                    if is_receipt(mail['subject'].lower()):
+                        receipts.append({ 'subject' : mail['subject'], 'body' : mail['body']})
+        else:
+            break
+
+
+    return json.dumps(receipts)
+
+
+@app.route('/get_gmail_receipts', methods=['POST'])
+def get_gmail_receipts():
+
+  if "date_range" not in request.args:
+    raise SendResponse('Please provide the date_range query parameters (example: date_range=after:2018/09/03+before:2018/10/3')
+
+  if not has_args(request.json, ['scopes','token_uri','token','client_id','client_secret','refresh_token']):
+    raise SendResponse("Please provide gmail scopes,token_uri,token,client_id,client_secret,refresh_token within the body of your post request. For example: {'scopes': ['https://www.googleapis.com/auth/gmail.readonly'], 'token_uri': 'https://www.googleapis.com/oauth2/v3/token', 'token': 'ya29.GlsrBvAlmmclOSbNuOe9QmrxLaEWe3t-W7uvaaDsM8oR4G3E2dOp-h70QX84X8mn96rKsJNwnpZQIbl78qGlKEQSBBumPHWlT5ifeUxpecuqJ0iXoYh7RuROBMMA', 'client_id': u'969545104751-3cc95edgshu2bstroubelbu789vd9f68.apps.googleusercontent.com', u'client_secret': 'INqCxZox_qa7o40Ja1TBRpRp', 'refresh_token': u'1/ngq9AA0Jssnc4O_FG64c9CIDULF3SdkwrJ-U2UolS28' ")
+
+  creds = request.json
+  date_range = request.args['date_range']
   # Load credentials from the session.
 
-  creds = flask.session['credentials']
-  credentials = google.oauth2.credentials.Credentials(**creds)
+  try:
 
-  response = get_receipts(creds,'after:2018/09/03 before:2018/10/3')
+    credentials = google.oauth2.credentials.Credentials(**creds)
 
-  # service = googleapiclient.discovery.build('gmail', 'v1', credentials=credentials)
+    response = get_receipts(creds,date_range)
 
-  # response = service.users().messages().list(userId='me',labelIds=['INBOX']).execute()
-
-  # drive = googleapiclient.discovery.build(
-  #     API_SERVICE_NAME, API_VERSION, credentials=credentials)
-  #
-  # files = drive.files().list().execute()
-
-  # Save credentials back to session in case access token was refreshed.
-  # ACTION ITEM: In a production app, you likely want to save these
-  #              credentials in a persistent database instead.
-  flask.session[credentials.token] = credentials_to_dict(credentials)
+   # flask.session[credentials.token] = credentials_to_dict(credentials)
+  except Exception as e:
+    print(e)
+    raise SendResponse(str(e), 500)
 
   return flask.jsonify(response)  #{ 'token' :credentials.token })
 
